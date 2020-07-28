@@ -60,6 +60,11 @@ def update_connections(key_field_name: str, vertex_to_insert: str, vertex_list: 
 
 
 # ------------------------------------------------------
+def get_out_edges(vertex):
+    data = read_from_file(vertex+".json")
+    return list(data["edges out"].keys())
+
+
 @dataclass_json
 @dataclass
 class DBTable(db_api.DBTable):
@@ -180,11 +185,65 @@ class DBTable(db_api.DBTable):
             vertexes_to_return.append(self.get_record(vertex))
         return vertexes_to_return
 
+    def find_path(self, start, end, path=None):
+        if path is None:
+            path = []
+
+        path = path + [start]
+
+        if start == end:
+            return path
+
+        if start not in self.vertex_list:
+            return None
+
+        for connection in get_out_edges(start):
+            if connection not in path:
+                new_path = self.find_path(connection, end, path)
+                if new_path:
+                    return new_path
+
+        return None
+
+    def find_all_paths(self, start, end, path=None):
+        if path is None:
+            path = []
+        path = path + [start]
+        if start == end:
+            return [path]
+        if start not in self.vertex_list:
+            return []
+        paths = []
+        for node in get_out_edges(start):
+            if node not in path:
+                new_paths = self.find_all_paths(node, end, path)
+                for new_path in new_paths:
+                    paths.append(new_path)
+        return paths
+
+    def find_shortest_path(self, start, end, path=None):
+        if path is None:
+            path = []
+        path = path + [start]
+        if start == end:
+            return path
+        if start not in self.vertex_list:
+            return None
+        shortest = None
+        for node in get_out_edges(start):
+            if node not in path:
+                new_path = self.find_shortest_path(node, end, path)
+                if new_path:
+                    if not shortest or len(new_path) < len(shortest):
+                        shortest = new_path
+        return shortest
+
+
+
 
 @dataclass_json
 @dataclass
 class DataBase(db_api.DataBase):
-
 
     def __init__(self):
         self.tables_list = {}
@@ -197,12 +256,12 @@ class DataBase(db_api.DataBase):
                                   db_api.DBField("edges out", Dict[str, Edge])], "ID")
 
         for file in files:
-             db.vertex_list.append(file[:-5])
+            db.vertex_list.append(file[:-5])
 
         self.tables_list["Students"] = db
 
     def create_table(self, table_name: str, fields: List[db_api.DBField], key_field_name: str) -> DBTable:
-        if key_field_name not in list(map(lambda x : x.name, fields)):
+        if key_field_name not in list(map(lambda x: x.name, fields)):
             raise ValueError
         table = DBTable(table_name, fields, key_field_name)
         self.tables_list[table_name] = table
@@ -220,14 +279,24 @@ class DataBase(db_api.DataBase):
     def get_tables_names(self) -> List[Any]:
         return list(self.tables_list.keys())
 
-    def join(self, db1:DBTable, db2:DBTable) -> DBTable:
-        for vertex in db2.vertex_list:
-            db1.insert_record(db2.get_record(vertex))
-        return db1
+    def query_multiple_tables(self, tables: List[str], fields_and_values_list: List[List[SelectionCriteria]], fields_to_join_by: List[str]) -> List[Dict[str, Any]]:
+        raise NotImplementedError
 
-    def intersect(self, db1:DBTable, db2:DBTable) -> DBTable:
-        for vertex in db2.vertex_list:
-            if vertex not in db1.vertex_list:
-                db2.delete_record(vertex)
-        return db2
-    
+
+if __name__ == '__main__':
+    vertex = []
+
+    db = DBTable("my table", [db_api.DBField("name", str), db_api.DBField("population", int),
+                              db_api.DBField("edges in", Dict[str, Edge]),
+                              db_api.DBField("edges out", Dict[str, Edge])], "name")
+
+    Tel_Aviv = {"name": "Tel Aviv", "population": 100, "edges in": {"Yafo": 16},
+                "edges out": {"Eilat": 80, "Yahud": 30}}
+
+    Yahud = {"name": "Yahud", "edges out": {"Ganot": 13, "Yafo": 8}}
+
+    db.insert_record(Yahud)
+    db.insert_record(Tel_Aviv)
+    db.insert_record({"name": "Ganot", "edges out": {"Yafo": 13}})
+#     dbs = DataBase()
+    print(db.find_shortest_path("Tel Aviv", "Yafo"))
